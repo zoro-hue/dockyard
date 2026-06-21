@@ -1,0 +1,28 @@
+{
+  "name": "dockyard",
+  "private": true,
+  "scripts": {
+    "build": "turbo build",
+    "dev": "turbo dev",
+    "lint": "turbo lint",
+    "format": "prettier --write \"**/*.{ts,tsx,md}\""
+  },
+  "devDependencies": {
+    "@types/inquirer": "^9.0.7",
+    "nodemon": "^3.1.9",
+    "prettier": "^3.2.5",
+    "turbo": "^2.3.1",
+    "typescript": "^5.5.4"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "packageManager": "npm@10.5.2",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "npmConfig": {
+    "legacy-peer-deps": true
+  }
+}
