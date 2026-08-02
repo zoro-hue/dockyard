@@ -65,13 +65,12 @@ app.prepare().then(() => {
                     await subClient.connect();
                 }
 
-                const requestHandlerUrl = process.env.REQUEST_HANDLER_URL || "https://dockyard-request-handler.onrender.com";
                 const publicBaseUrl = process.env.PUBLIC_BASE_URL || process.env.RENDER_EXTERNAL_URL || "https://dockyard-web.onrender.com";
 
                 const status = await subscriber.hGet("status", deploymentId);
                 if (status === "build-complete") {
                     socket.emit("DONE", {
-                        url: `${requestHandlerUrl}/deployments/${deploymentId}`,
+                        url: `${publicBaseUrl}/api/serve/${deploymentId}`,
                         publicUrl: `${publicBaseUrl}/api/serve/${deploymentId}`
                     });
                 }

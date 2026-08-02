@@ -131,13 +131,12 @@ export async function processLocalBuild(projectId: string) {
         }
 
         const host = process.env.RENDER_EXTERNAL_URL || "https://dockyard-web.onrender.com";
-        const requestHandlerUrl = process.env.REQUEST_HANDLER_URL || "https://dockyard-request-handler.onrender.com";
 
         deploymentEvents.emitDeploymentEvent({
             deploymentId: projectId,
             eventName: "DONE",
             data: {
-                url: `${requestHandlerUrl}/deployments/${projectId}`,
+                url: `${host}/api/serve/${projectId}`,
                 publicUrl: `${host}/api/serve/${projectId}`
             }
         });
