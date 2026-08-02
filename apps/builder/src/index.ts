@@ -5,14 +5,26 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-const subscriber = createClient();
-const publisher = createClient();
+const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
+const subscriber = createClient({ url: redisUrl });
+const publisher = createClient({ url: redisUrl });
 
-console.log("Connecting to Redis");
+subscriber.on('error', (err) => console.warn('[Builder Subscriber Warning]', err.message));
+publisher.on('error', (err) => console.warn('[Builder Publisher Warning]', err.message));
+
+console.log("Connecting to Redis at", redisUrl);
 
 (async () => {
-    await subscriber.connect();
-    await publisher.connect();
+    while (true) {
+        try {
+            if (!subscriber.isOpen) await subscriber.connect();
+            if (!publisher.isOpen) await publisher.connect();
+            break;
+        } catch (err: any) {
+            console.warn("Failed to connect to Redis, retrying in 3s...", err.message);
+            await new Promise((resolve) => setTimeout(resolve, 3000));
+        }
+    }
 
     while (true) {
         try {
@@ -28,10 +40,13 @@ console.log("Connecting to Redis");
             await buildProject(projectId);
             await uploadProjectBuild(projectId);
 
+            const baseUrl = process.env.BASE_URL || "http://localhost:4000";
+            const publicBaseUrl = process.env.PUBLIC_BASE_URL || "http://localhost:3001";
+
             await publisher.hSet("status", projectId, "build-complete");
             publisher.publish(`deployment:${projectId}:builder:complete`, JSON.stringify({
-                url: `http://${projectId}.localhost:4000`,
-                publicUrl: `https://${projectId}.dockyard.app`,
+                url: `${baseUrl}/deployments/${projectId}`,
+                publicUrl: `${publicBaseUrl}/api/serve/${projectId}`,
             }));
 
         } catch (error) {

@@ -1,0 +1,20 @@
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Copy request-handler package
+COPY apps/request-handler/package.json ./
+
+# Install dependencies
+RUN npm install
+
+# Copy source
+COPY apps/request-handler/src/ ./src/
+COPY apps/request-handler/tsconfig.json ./
+
+ENV LOCAL_S3_DIR=/app/local-s3-bucket
+ENV PORT=4000
+
+EXPOSE 4000
+
+CMD ["npx", "ts-node", "src/index.ts"]

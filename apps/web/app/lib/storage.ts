@@ -1,7 +1,20 @@
 import { readFile, mkdir, writeFile } from "node:fs/promises";
-import { join, dirname } from "path";
+import { join, dirname, resolve } from "path";
+import { existsSync } from "fs";
 
-const LOCAL_S3_DIR = "d:\\XboxGames\\vercel-main\\local-s3-bucket";
+function getLocalS3Dir(): string {
+    if (process.env.LOCAL_S3_DIR) return process.env.LOCAL_S3_DIR;
+    let curr = process.cwd();
+    while (curr && curr !== resolve(curr, "..")) {
+        if (existsSync(join(curr, "turbo.json"))) {
+            return join(curr, "local-s3-bucket");
+        }
+        curr = resolve(curr, "..");
+    }
+    return join(process.cwd(), "local-s3-bucket");
+}
+
+const LOCAL_S3_DIR = getLocalS3Dir();
 
 /**
  * Upload a file to local simulated S3 bucket.
