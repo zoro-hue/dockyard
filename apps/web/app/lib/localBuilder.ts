@@ -1,11 +1,9 @@
-import { mkdir, readdir, stat, copyFile, existsSync } from "fs";
 import { mkdir as mkdirAsync, readdir as readdirAsync, stat as statAsync, copyFile as copyFileAsync } from "fs/promises";
+import { existsSync } from "fs";
 import { exec } from "child_process";
-import { join } from "path";
+import { join, resolve } from "path";
 import { cwd } from "process";
 import { deploymentEvents } from "./events";
-
-import { resolve } from "path";
 
 function getLocalS3Dir(): string {
     if (process.env.LOCAL_S3_DIR) return process.env.LOCAL_S3_DIR;
@@ -46,23 +44,40 @@ export async function processLocalBuild(projectId: string) {
         deploymentEvents.emitDeploymentEvent({
             deploymentId: projectId,
             eventName: "builder:download",
-            data: { file: `Downloaded project sources into workspace: ${projectId}` }
+            data: { file: `Repository downloaded: ${projectId}` }
         });
 
         await mkdirAsync(buildPath, { recursive: true });
         await mkdirAsync(s3BuildPath, { recursive: true });
 
-        const packageJsonPath = join(projectPath, "package.json");
+        // Find working directory with package.json (root or subfolder)
+        let workingDir = projectPath;
+        if (!existsSync(join(projectPath, "package.json"))) {
+            try {
+                const subdirs = await readdirAsync(projectPath);
+                for (const sub of subdirs) {
+                    const subPath = join(projectPath, sub);
+                    const subStats = await statAsync(subPath);
+                    if (subStats.isDirectory() && existsSync(join(subPath, "package.json"))) {
+                        workingDir = subPath;
+                        console.log(`[LocalBuilder] Found package.json in subfolder: ${sub}`);
+                        break;
+                    }
+                }
+            } catch (e) {}
+        }
+
+        const packageJsonPath = join(workingDir, "package.json");
 
         if (existsSync(packageJsonPath)) {
             deploymentEvents.emitDeploymentEvent({
                 deploymentId: projectId,
                 eventName: "builder:build",
-                data: { data: `[Builder] Found package.json for ${projectId}. Running npm install & build...` }
+                data: { data: `[Builder] Installing dependencies & building project at ${workingDir}...` }
             });
 
             await new Promise<void>((resolve) => {
-                const child = exec("npm install && npm run build", { cwd: projectPath, shell: process.env.ComSpec || true } as any);
+                const child = exec("npm install --legacy-peer-deps && npm run build", { cwd: workingDir } as any);
 
                 child.stdout?.on("data", (data) => {
                     deploymentEvents.emitDeploymentEvent({
@@ -84,16 +99,16 @@ export async function processLocalBuild(projectId: string) {
             });
 
             let outFolder = "";
-            if (existsSync(join(projectPath, "dist"))) outFolder = "dist";
-            else if (existsSync(join(projectPath, "build"))) outFolder = "build";
-            else if (existsSync(join(projectPath, "out"))) outFolder = "out";
+            if (existsSync(join(workingDir, "dist"))) outFolder = "dist";
+            else if (existsSync(join(workingDir, "build"))) outFolder = "build";
+            else if (existsSync(join(workingDir, "out"))) outFolder = "out";
 
-            const sourceDir = outFolder ? join(projectPath, outFolder) : projectPath;
+            const sourceDir = outFolder ? join(workingDir, outFolder) : workingDir;
 
             deploymentEvents.emitDeploymentEvent({
                 deploymentId: projectId,
                 eventName: "builder:upload-output",
-                data: { file: `Publishing compiled assets from ${outFolder || "root"}...` }
+                data: { file: `Publishing compiled static assets from ${outFolder || "root"}...` }
             });
 
             await copyDir(sourceDir, buildPath);
@@ -102,28 +117,28 @@ export async function processLocalBuild(projectId: string) {
             deploymentEvents.emitDeploymentEvent({
                 deploymentId: projectId,
                 eventName: "builder:build",
-                data: { data: "[Builder] No package.json found. Serving as static site." }
+                data: { data: "[Builder] No package.json found. Serving as static HTML site." }
             });
 
             deploymentEvents.emitDeploymentEvent({
                 deploymentId: projectId,
                 eventName: "builder:upload-output",
-                data: { file: "Publishing static assets to deployment target..." }
+                data: { file: "Publishing static assets to target..." }
             });
 
             await copyDir(projectPath, buildPath);
             await copyDir(projectPath, s3BuildPath);
         }
 
-        const publicUrl = `http://localhost:3001/api/serve/${projectId}`;
-        const deployUrl = `http://localhost:4000/deployments/${projectId}`;
+        const host = process.env.RENDER_EXTERNAL_URL || "https://dockyard-web.onrender.com";
+        const requestHandlerUrl = process.env.REQUEST_HANDLER_URL || "https://dockyard-request-handler.onrender.com";
 
         deploymentEvents.emitDeploymentEvent({
             deploymentId: projectId,
             eventName: "DONE",
             data: {
-                url: deployUrl,
-                publicUrl: publicUrl
+                url: `${requestHandlerUrl}/deployments/${projectId}`,
+                publicUrl: `${host}/api/serve/${projectId}`
             }
         });
     } catch (err: any) {
