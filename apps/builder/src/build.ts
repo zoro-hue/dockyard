@@ -36,15 +36,31 @@ export const buildProject = async (projectId: string) => {
 
         await mkdir(buildPath, { recursive: true });
 
-        const packageJsonPath = join(projectPath, "package.json");
+        // Find working directory with package.json (root or subfolder)
+        let workingDir = projectPath;
+        if (!existsSync(join(projectPath, "package.json"))) {
+            try {
+                const subdirs = await readdir(projectPath);
+                for (const sub of subdirs) {
+                    const subPath = join(projectPath, sub);
+                    const subStats = await stat(subPath);
+                    if (subStats.isDirectory() && existsSync(join(subPath, "package.json"))) {
+                        workingDir = subPath;
+                        console.log(`[Builder] Found package.json in subfolder: ${sub}`);
+                        break;
+                    }
+                }
+            } catch (e) {}
+        }
+
+        const packageJsonPath = join(workingDir, "package.json");
 
         if (existsSync(packageJsonPath)) {
-            // It has package.json - try to install and build
-            console.log(`[Builder] Found package.json for project ${projectId}. Building...`);
+            console.log(`[Builder] Found package.json at ${workingDir}. Installing & building...`);
             let buildResult = "";
             try {
-                buildResult = execSync(`npm install && npm run build`, { 
-                    cwd: projectPath,
+                buildResult = execSync(`npm install --legacy-peer-deps && npm run build`, { 
+                    cwd: workingDir,
                     encoding: 'utf-8',
                     stdio: 'pipe' 
                 });
@@ -57,28 +73,27 @@ export const buildProject = async (projectId: string) => {
                 data: buildResult
             }));
 
-            // Determine output folder (dist, build, out, or project root)
+            // Determine output folder (dist, build, out, or workingDir root)
             let outFolder = "";
-            if (existsSync(join(projectPath, "dist"))) {
+            if (existsSync(join(workingDir, "dist"))) {
                 outFolder = "dist";
-            } else if (existsSync(join(projectPath, "build"))) {
+            } else if (existsSync(join(workingDir, "build"))) {
                 outFolder = "build";
-            } else if (existsSync(join(projectPath, "out"))) {
+            } else if (existsSync(join(workingDir, "out"))) {
                 outFolder = "out";
             }
 
             if (outFolder) {
                 console.log(`[Builder] Copying build output from ${outFolder} to ${buildPath}`);
-                await copyDir(join(projectPath, outFolder), buildPath);
+                await copyDir(join(workingDir, outFolder), buildPath);
             } else {
-                console.log(`[Builder] No standard build output folder found. Copying all files...`);
-                await copyDir(projectPath, buildPath);
+                console.log(`[Builder] Copying all project files to ${buildPath}`);
+                await copyDir(workingDir, buildPath);
             }
         } else {
-            // Static HTML site! Just copy the project files directly to buildPath.
-            console.log(`[Builder] No package.json found for project ${projectId}. Treating as a static site.`);
+            console.log(`[Builder] No package.json found. Serving static HTML site.`);
             await publisher.publish(`deployment:${projectId}:builder:build`, JSON.stringify({
-                data: "No package.json found. Serving as static HTML site."
+                data: "No package.json found. Serving static HTML site."
             }));
             await copyDir(projectPath, buildPath);
         }
