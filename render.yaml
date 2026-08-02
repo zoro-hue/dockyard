@@ -1,0 +1,39 @@
+services:
+  - type: web
+    name: dockyard-web
+    env: docker
+    dockerfilePath: ./Dockerfile.web
+    envVars:
+      - key: REDIS_URL
+        fromRedis:
+          name: dockyard-redis
+          property: connectionString
+
+  - type: worker
+    name: dockyard-builder
+    env: docker
+    dockerfilePath: ./Dockerfile.builder
+    envVars:
+      - key: REDIS_URL
+        fromRedis:
+          name: dockyard-redis
+          property: connectionString
+      - key: BASE_URL
+        fromService:
+          type: web
+          name: dockyard-request-handler
+          property: url
+      - key: PUBLIC_BASE_URL
+        fromService:
+          type: web
+          name: dockyard-web
+          property: url
+
+  - type: web
+    name: dockyard-request-handler
+    env: docker
+    dockerfilePath: ./Dockerfile.request-handler
+
+redis:
+  - name: dockyard-redis
+    ipAllowList: []
