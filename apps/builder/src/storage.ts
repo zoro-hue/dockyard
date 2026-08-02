@@ -1,10 +1,25 @@
-import { join, dirname } from "path";
+import { join, dirname, resolve } from "path";
 import { cwd } from "process";
 import { mkdir, readdir, stat, readFile, writeFile } from "fs/promises";
+import { existsSync } from "fs";
 import { createClient } from "redis";
 
-const LOCAL_S3_DIR = "d:\\XboxGames\\vercel-main\\local-s3-bucket";
-const publisher = createClient();
+function getLocalS3Dir(): string {
+    if (process.env.LOCAL_S3_DIR) return process.env.LOCAL_S3_DIR;
+    let curr = process.cwd();
+    while (curr && curr !== resolve(curr, "..")) {
+        if (existsSync(join(curr, "turbo.json"))) {
+            return join(curr, "local-s3-bucket");
+        }
+        curr = resolve(curr, "..");
+    }
+    return join(process.cwd(), "local-s3-bucket");
+}
+
+const LOCAL_S3_DIR = getLocalS3Dir();
+const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
+const publisher = createClient({ url: redisUrl });
+publisher.on('error', (err) => console.warn('[Storage Publisher Warning]', err.message));
 
 // Recursive helper to get files in simulated S3
 const getFilesRecursive = async (dir: string): Promise<string[]> => {

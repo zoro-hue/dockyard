@@ -4,7 +4,9 @@ import { createClient } from "redis";
 import { join } from "path";
 import { existsSync } from "fs";
 
-const publisher = createClient();
+const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
+const publisher = createClient({ url: redisUrl });
+publisher.on('error', (err) => console.warn('[Build Publisher Warning]', err.message));
 
 // Recursive copy function
 const copyDir = async (src: string, dest: string) => {

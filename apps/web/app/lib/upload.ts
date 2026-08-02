@@ -3,8 +3,9 @@ import { cwd } from "process";
 import { getAllFiles } from "./file";
 import { uploadFile } from "./storage";
 import simpleGit from "simple-git";
-import { createClient } from "redis";
-const publisher = createClient();
+const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
+const publisher = createClient({ url: redisUrl });
+publisher.on('error', (err) => console.warn('[Upload Publisher Warning]', err.message));
 
 export async function cloneAndUploadRepository(id: string, repositoryUrl: string) {
     await simpleGit().clone(repositoryUrl, join(cwd(), "outputs", id));

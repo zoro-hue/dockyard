@@ -11,7 +11,8 @@ const port = parseInt(process.env.PORT || "3001", 10);
 const dev = process.env.NODE_ENV !== "production";
 const app = next({ dev });
 const handler = app.getRequestHandler();
-const subscriber = createClient();
+const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
+const subscriber = createClient({ url: redisUrl });
 subscriber.on('error', (err) => console.warn('[Redis Subscriber Warning]', err.message));
 
 (async () => {
