@@ -17,6 +17,9 @@ RUN npm install --legacy-peer-deps
 # Build the web app
 RUN npm run build --prefix apps/web
 
+# Precompile custom Next.js Socket.IO server to JavaScript
+RUN npx tsc -p apps/web/tsconfig.server.json
+
 # Create shared storage directory
 RUN mkdir -p /app/local-s3-bucket/builds /app/local-s3-bucket/outputs
 
@@ -25,4 +28,4 @@ ENV LOCAL_S3_DIR=/app/local-s3-bucket
 
 WORKDIR /app/apps/web
 
-CMD ["node", "--loader", "ts-node/esm", "server.ts"]
+CMD ["node", "dist/server.js"]
