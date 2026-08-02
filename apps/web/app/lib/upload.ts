@@ -8,7 +8,7 @@ const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
 const publisher = createClient({ url: redisUrl });
 publisher.on('error', (err) => console.warn('[Upload Publisher Warning]', err.message));
 
-import { deploymentEvents } from "./events.js";
+import { deploymentEvents } from "./events";
 
 export async function cloneAndUploadRepository(id: string, repositoryUrl: string) {
     try {
@@ -35,7 +35,7 @@ export async function cloneAndUploadRepository(id: string, repositoryUrl: string
                 percentage: Math.round((uploadedFiles / totalFiles) * 100)
             };
 
-            deploymentEvents.emitEvent(id, 'uploader:upload-progress', payload);
+            deploymentEvents.emitDeploymentEvent({ deploymentId: id, eventName: 'uploader:upload-progress', data: payload });
             await publisher.publish(`deployment:${id}:uploader:upload-progress`, JSON.stringify(payload));
         }
 
