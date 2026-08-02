@@ -40,7 +40,7 @@ export async function cloneAndUploadRepository(id: string, repositoryUrl: string
         }
 
         await publisher.hSet("status", id, "uploading");
-        await publisher.lPush("build-queue", id);
+        await publisher.lPush("build-queue", JSON.stringify({ id, repositoryUrl }));
     } catch (err) {
         console.error(`[Uploader Error] Failed processing repo ${id}:`, err);
     }
