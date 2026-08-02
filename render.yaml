@@ -2,7 +2,8 @@ services:
   - type: web
     name: dockyard-web
     env: docker
-    dockerfilePath: ./Dockerfile.web
+    dockerfilePath: Dockerfile.web
+    plan: free
     envVars:
       - key: REDIS_URL
         fromRedis:
@@ -12,7 +13,8 @@ services:
   - type: worker
     name: dockyard-builder
     env: docker
-    dockerfilePath: ./Dockerfile.builder
+    dockerfilePath: Dockerfile.builder
+    plan: free
     envVars:
       - key: REDIS_URL
         fromRedis:
@@ -22,18 +24,20 @@ services:
         fromService:
           type: web
           name: dockyard-request-handler
-          property: url
+          property: host
       - key: PUBLIC_BASE_URL
         fromService:
           type: web
           name: dockyard-web
-          property: url
+          property: host
 
   - type: web
     name: dockyard-request-handler
     env: docker
-    dockerfilePath: ./Dockerfile.request-handler
+    dockerfilePath: Dockerfile.request-handler
+    plan: free
 
 redis:
   - name: dockyard-redis
+    plan: free
     ipAllowList: []
