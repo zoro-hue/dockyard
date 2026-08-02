@@ -2,6 +2,7 @@ import { createClient } from "redis";
 import { downloadProject, uploadProjectBuild } from "./storage";
 import { buildProject } from "./build";
 import { createServer } from "http";
+import dotenv from "dotenv";
 
 dotenv.config();
 

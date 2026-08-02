@@ -21,4 +21,6 @@ RUN mkdir -p /app/local-s3-bucket/builds /app/local-s3-bucket/outputs
 ENV NODE_ENV=production
 ENV LOCAL_S3_DIR=/app/local-s3-bucket
 
-CMD ["npx", "ts-node", "apps/web/server.ts"]
+WORKDIR /app/apps/web
+
+CMD ["npx", "ts-node", "server.ts"]
