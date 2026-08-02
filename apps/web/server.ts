@@ -65,12 +65,14 @@ app.prepare().then(() => {
                     await subClient.connect();
                 }
 
-                // Check if the build already completed before we subscribed
+                const requestHandlerUrl = process.env.REQUEST_HANDLER_URL || "https://dockyard-request-handler.onrender.com";
+                const publicBaseUrl = process.env.PUBLIC_BASE_URL || process.env.RENDER_EXTERNAL_URL || "https://dockyard-web.onrender.com";
+
                 const status = await subscriber.hGet("status", deploymentId);
                 if (status === "build-complete") {
                     socket.emit("DONE", {
-                        url: `http://localhost:4000/deployments/${deploymentId}`,
-                        publicUrl: `http://localhost:3001/api/serve/${deploymentId}`
+                        url: `${requestHandlerUrl}/deployments/${deploymentId}`,
+                        publicUrl: `${publicBaseUrl}/api/serve/${deploymentId}`
                     });
                 }
 

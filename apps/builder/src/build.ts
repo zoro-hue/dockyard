@@ -57,20 +57,35 @@ export const buildProject = async (projectId: string) => {
 
         if (existsSync(packageJsonPath)) {
             console.log(`[Builder] Found package.json at ${workingDir}. Installing & building...`);
+            
+            await publisher.publish(`deployment:${projectId}:builder:build`, JSON.stringify({
+                data: `Found package.json. Installing project dependencies (npm install)...`
+            }));
+
             let buildResult = "";
             try {
-                buildResult = execSync(`npm install --legacy-peer-deps && npm run build`, { 
+                execSync(`npm install --legacy-peer-deps`, { 
+                    cwd: workingDir,
+                    encoding: 'utf-8',
+                    stdio: 'pipe' 
+                });
+
+                await publisher.publish(`deployment:${projectId}:builder:build`, JSON.stringify({
+                    data: `Dependencies installed successfully. Compiling production bundle (npm run build)...`
+                }));
+
+                buildResult = execSync(`npm run build`, { 
                     cwd: workingDir,
                     encoding: 'utf-8',
                     stdio: 'pipe' 
                 });
             } catch (err: any) {
                 buildResult = err.stdout || err.stderr || err.message;
-                console.error(`[Builder] Build script error:`, buildResult);
+                console.error(`[Builder] Build script warning/error:`, buildResult);
             }
 
             await publisher.publish(`deployment:${projectId}:builder:build`, JSON.stringify({
-                data: buildResult
+                data: buildResult || "Build step executed."
             }));
 
             // Determine output folder (dist, build, out, or workingDir root)
