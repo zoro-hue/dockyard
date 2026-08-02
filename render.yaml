@@ -16,7 +16,7 @@ services:
           name: dockyard-redis
           property: connectionString
 
-  - type: worker
+  - type: web
     name: dockyard-builder
     env: docker
     dockerfilePath: Dockerfile.builder

@@ -1,9 +1,17 @@
 import { createClient } from "redis";
 import { downloadProject, uploadProjectBuild } from "./storage";
 import { buildProject } from "./build";
-import dotenv from "dotenv";
+import { createServer } from "http";
 
 dotenv.config();
+
+const port = parseInt(process.env.PORT || "8080", 10);
+createServer((req, res) => {
+    res.writeHead(200, { "Content-Type": "text/plain" });
+    res.end("Dockyard Builder Worker active");
+}).listen(port, () => {
+    console.log(`Builder status server listening on port ${port}`);
+});
 
 const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
 const subscriber = createClient({ url: redisUrl });
