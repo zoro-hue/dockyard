@@ -1,4 +1,9 @@
 services:
+  - type: redis
+    name: dockyard-redis
+    plan: free
+    ipAllowList: []
+
   - type: web
     name: dockyard-web
     env: docker
@@ -6,7 +11,8 @@ services:
     plan: free
     envVars:
       - key: REDIS_URL
-        fromRedis:
+        fromService:
+          type: redis
           name: dockyard-redis
           property: connectionString
 
@@ -17,7 +23,8 @@ services:
     plan: free
     envVars:
       - key: REDIS_URL
-        fromRedis:
+        fromService:
+          type: redis
           name: dockyard-redis
           property: connectionString
       - key: BASE_URL
@@ -36,8 +43,3 @@ services:
     env: docker
     dockerfilePath: Dockerfile.request-handler
     plan: free
-
-redis:
-  - name: dockyard-redis
-    plan: free
-    ipAllowList: []
