@@ -2,28 +2,23 @@ FROM node:18-alpine
 
 WORKDIR /app
 
-# Copy root workspace files
-COPY package.json package-lock.json turbo.json ./
+# Copy root files
+COPY package.json package-lock.json* turbo.json ./
 
-# Copy all workspace packages
+# Copy all workspace packages and apps
 COPY packages/ ./packages/
-COPY apps/web/ ./apps/web/
-COPY apps/docs/ ./apps/docs/
+COPY apps/ ./apps/
 
 # Install dependencies
 RUN npm install --legacy-peer-deps
 
-# Build the Next.js app
+# Build the web app
 RUN npm run build --prefix apps/web
 
 # Create shared storage directory
 RUN mkdir -p /app/local-s3-bucket/builds /app/local-s3-bucket/outputs
 
 ENV NODE_ENV=production
-ENV PORT=3001
 ENV LOCAL_S3_DIR=/app/local-s3-bucket
-ENV REDIS_URL=redis://redis:6379
 
-EXPOSE 3001
-
-CMD ["node", "--loader", "ts-node/esm", "apps/web/server.ts"]
+CMD ["npx", "ts-node", "apps/web/server.ts"]

@@ -2,19 +2,14 @@ FROM node:18-alpine
 
 WORKDIR /app
 
-# Copy request-handler package
-COPY apps/request-handler/package.json ./
+COPY package.json package-lock.json* turbo.json ./
+COPY packages/ ./packages/
+COPY apps/request-handler/ ./apps/request-handler/
 
-# Install dependencies
-RUN npm install
+RUN npm install --legacy-peer-deps
 
-# Copy source
-COPY apps/request-handler/src/ ./src/
-COPY apps/request-handler/tsconfig.json ./
+RUN mkdir -p /app/local-s3-bucket
 
 ENV LOCAL_S3_DIR=/app/local-s3-bucket
-ENV PORT=4000
 
-EXPOSE 4000
-
-CMD ["npx", "ts-node", "src/index.ts"]
+CMD ["npx", "ts-node", "apps/request-handler/src/index.ts"]

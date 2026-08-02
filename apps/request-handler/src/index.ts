@@ -1,12 +1,26 @@
 import express, { Request, Response } from "express";
 import { readFile } from "fs/promises";
-import { join } from "path";
+import { join, resolve } from "path";
+import { existsSync } from "fs";
 import dotenv from "dotenv";
 
 dotenv.config();
 
+function getLocalS3Dir(): string {
+    if (process.env.LOCAL_S3_DIR) return process.env.LOCAL_S3_DIR;
+    let curr = process.cwd();
+    while (curr && curr !== resolve(curr, "..")) {
+        if (existsSync(join(curr, "turbo.json"))) {
+            return join(curr, "local-s3-bucket");
+        }
+        curr = resolve(curr, "..");
+    }
+    return join(process.cwd(), "local-s3-bucket");
+}
+
 const app = express();
-const LOCAL_S3_DIR = "d:\\XboxGames\\vercel-main\\local-s3-bucket";
+const LOCAL_S3_DIR = getLocalS3Dir();
+const port = parseInt(process.env.PORT || "4000", 10);
 
 app.get("/*", async (req: Request, res: Response) => {
     try {
@@ -58,6 +72,6 @@ app.get("/*", async (req: Request, res: Response) => {
     }
 });
 
-app.listen(4000, () => {
-    console.log("Server is running on port 4000");
+app.listen(port, () => {
+    console.log(`Request-handler running on port ${port}`);
 });
