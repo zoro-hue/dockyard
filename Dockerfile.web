@@ -23,4 +23,4 @@ ENV LOCAL_S3_DIR=/app/local-s3-bucket
 
 WORKDIR /app/apps/web
 
-CMD ["npx", "ts-node", "server.ts"]
+CMD ["node", "--loader", "ts-node/esm", "server.ts"]
