@@ -20,12 +20,43 @@ const mimeTypes: Record<string, string> = {
     ".ttf": "font/ttf",
 };
 
+function getCandidateBuildPaths(id: string): string[] {
+    const candidates = [
+        join(cwd(), "builds", id),
+        join(cwd(), "outputs", id),
+    ];
+    if (process.env.LOCAL_S3_DIR) {
+        candidates.push(join(process.env.LOCAL_S3_DIR, "builds", id));
+        candidates.push(join(process.env.LOCAL_S3_DIR, "outputs", id));
+    }
+    return candidates;
+}
+
+function findAssetPath(id: string, relativeFilePath: string): string | null {
+    for (const baseDir of getCandidateBuildPaths(id)) {
+        if (!existsSync(baseDir)) continue;
+
+        const direct = join(baseDir, relativeFilePath);
+        if (existsSync(direct)) return direct;
+
+        const inDist = join(baseDir, "dist", relativeFilePath);
+        if (existsSync(inDist)) return inDist;
+
+        const inBuild = join(baseDir, "build", relativeFilePath);
+        if (existsSync(inBuild)) return inBuild;
+
+        const inOut = join(baseDir, "out", relativeFilePath);
+        if (existsSync(inOut)) return inOut;
+    }
+    return null;
+}
+
 export async function GET(request: Request, { params }: { params: Promise<{ id: string; path: string[] }> }) {
     const { id, path } = await params;
     const relativeFilePath = path.join("/");
-    const filePath = join(cwd(), "builds", id, relativeFilePath);
+    const filePath = findAssetPath(id, relativeFilePath);
 
-    if (!existsSync(filePath)) {
+    if (!filePath) {
         return new NextResponse("File not found", { status: 404 });
     }
 

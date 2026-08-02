@@ -4,24 +4,35 @@ import { existsSync } from "fs";
 import { join } from "path";
 import { cwd } from "process";
 
-const mimeTypes: Record<string, string> = {
-    ".html": "text/html",
-    ".css": "text/css",
-    ".js": "text/javascript",
-    ".json": "application/json",
-    ".png": "image/png",
-    ".jpg": "image/jpeg",
-    ".svg": "image/svg+xml",
-    ".ico": "image/x-icon",
-};
+function getCandidateBuildPaths(id: string): string[] {
+    const candidates = [
+        join(cwd(), "builds", id),
+        join(cwd(), "outputs", id),
+    ];
+    if (process.env.LOCAL_S3_DIR) {
+        candidates.push(join(process.env.LOCAL_S3_DIR, "builds", id));
+        candidates.push(join(process.env.LOCAL_S3_DIR, "outputs", id));
+    }
+    return candidates;
+}
+
+function findIndexPath(id: string): string | null {
+    for (const baseDir of getCandidateBuildPaths(id)) {
+        if (!existsSync(baseDir)) continue;
+        if (existsSync(join(baseDir, "index.html"))) return join(baseDir, "index.html");
+        if (existsSync(join(baseDir, "dist", "index.html"))) return join(baseDir, "dist", "index.html");
+        if (existsSync(join(baseDir, "build", "index.html"))) return join(baseDir, "build", "index.html");
+        if (existsSync(join(baseDir, "out", "index.html"))) return join(baseDir, "out", "index.html");
+    }
+    return null;
+}
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
     const { id } = await params;
-    const buildPath = join(cwd(), "builds", id);
-    const indexPath = join(buildPath, "index.html");
+    const indexPath = findIndexPath(id);
 
-    if (!existsSync(indexPath)) {
-        return new NextResponse("Project index.html not found", { status: 404 });
+    if (!indexPath) {
+        return new NextResponse(`Project ${id} index.html not found in build outputs.`, { status: 404 });
     }
 
     try {
@@ -30,6 +41,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
             headers: { "Content-Type": "text/html" }
         });
     } catch {
-        return new NextResponse("Error loading project", { status: 500 });
+        return new NextResponse("Error loading project index.html", { status: 500 });
     }
 }
