@@ -4,47 +4,101 @@ import next from "next";
 import { Server } from "socket.io";
 import { createClient } from 'redis'
 
+import { deploymentEvents } from "./app/lib/events.js";
+
 const hostname = 'localhost';
 const port = parseInt(process.env.PORT || "3001", 10);
 const dev = process.env.NODE_ENV !== "production";
 const app = next({ dev });
 const handler = app.getRequestHandler();
 const subscriber = createClient();
+subscriber.on('error', (err) => console.warn('[Redis Subscriber Warning]', err.message));
 
 (async () => {
-    if (!subscriber.isOpen) {
-        await subscriber.connect();
+    try {
+        if (!subscriber.isOpen) {
+            await subscriber.connect();
+        }
+    } catch (err: any) {
+        console.warn('[Redis Connect Warning]', err.message);
     }
-})()
+})();
 
 app.prepare().then(() => {
-    const httpServer = createServer(handler);
+    const httpServer = createServer(async (req, res) => {
+        try {
+            const parsedUrl = parse(req.url!, true);
+            await handler(req, res, parsedUrl);
+        } catch (err) {
+            console.error("Error handling request:", req.url, err);
+            res.statusCode = 500;
+            res.end("Internal Server Error");
+        }
+    });
     const io = new Server(httpServer);
 
     io.on("connection", (socket) => {
+        const subClient = subscriber.duplicate();
+        subClient.on('error', (err) => console.warn('[Redis SubClient Warning]', err.message));
+
+        let activeDeploymentId = "";
+        const onLocalEvent = (payload: { deploymentId: string; eventName: string; data: any }) => {
+            if (activeDeploymentId === payload.deploymentId) {
+                socket.emit(payload.eventName, payload.data);
+            }
+        };
+
+        deploymentEvents.on("event", onLocalEvent);
 
         socket.on("subscribe:upload-progress", async (deploymentId) => {
-            console.log("SUBSCRIBED!")
-            await subscriber.pSubscribe(`deployment:${deploymentId}:uploader:upload-progress`, (message) => {
-                socket.emit("uploader:upload-progress", JSON.parse(message));
-            });
-            await subscriber.pSubscribe(`deployment:${deploymentId}:builder:download`, (message) => {
-                socket.emit("builder:download", JSON.parse(message));
-            });
-            await subscriber.pSubscribe(`deployment:${deploymentId}:builder:build`, (message) => {
-                socket.emit("builder:build", JSON.parse(message));
-            });
-            await subscriber.pSubscribe(`deployment:${deploymentId}:builder:upload-output`, (message) => {
-                socket.emit("builder:upload-output", JSON.parse(message));
-            });
-            await subscriber.pSubscribe(`deployment:${deploymentId}:builder:complete`, (message) => {
-                socket.emit("DONE", JSON.parse(message));
-            });
-        })
+            activeDeploymentId = deploymentId;
+            console.log(`Socket ${socket.id} subscribed to deployment: ${deploymentId}`);
 
-        socket.on('disconnect', () => {
-            subscriber.unsubscribe()
-        })
+            // Replay buffered events to eliminate subscription race conditions
+            const history = deploymentEvents.getEvents(deploymentId);
+            for (const item of history) {
+                socket.emit(item.eventName, item.data);
+            }
+            try {
+                if (!subClient.isOpen) {
+                    await subClient.connect();
+                }
+
+                // Check if the build already completed before we subscribed
+                const status = await subscriber.hGet("status", deploymentId);
+                if (status === "build-complete") {
+                    socket.emit("DONE", {
+                        url: `http://localhost:4000/deployments/${deploymentId}`,
+                        publicUrl: `http://localhost:3001/api/serve/${deploymentId}`
+                    });
+                }
+
+                await subClient.subscribe(`deployment:${deploymentId}:uploader:upload-progress`, (message) => {
+                    socket.emit("uploader:upload-progress", JSON.parse(message));
+                });
+                await subClient.subscribe(`deployment:${deploymentId}:builder:download`, (message) => {
+                    socket.emit("builder:download", JSON.parse(message));
+                });
+                await subClient.subscribe(`deployment:${deploymentId}:builder:build`, (message) => {
+                    socket.emit("builder:build", JSON.parse(message));
+                });
+                await subClient.subscribe(`deployment:${deploymentId}:builder:upload-output`, (message) => {
+                    socket.emit("builder:upload-output", JSON.parse(message));
+                });
+                await subClient.subscribe(`deployment:${deploymentId}:builder:complete`, (message) => {
+                    socket.emit("DONE", JSON.parse(message));
+                });
+            } catch (err: any) {
+                console.warn('[Redis Subscription Warning]', err.message);
+            }
+        });
+
+        socket.on('disconnect', async () => {
+            deploymentEvents.off("event", onLocalEvent);
+            if (subClient.isOpen) {
+                await subClient.disconnect();
+            }
+        });
     });
 
     httpServer

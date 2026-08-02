@@ -8,6 +8,7 @@ import Link from "next/link";
 
 export default function ApplicationBuilder() {
     const [isConnected, setIsConnected] = useState(false);
+    const [inputRepoUrl, setInputRepoUrl] = useState("");
     const [status, setStatus] = useState<null | string>(null);
     const [uploadProgress, setUploadProgress] = useState(0);
     const [uploadedFiles, setUploadedFiles] = useState<string[]>([]);
@@ -37,12 +38,8 @@ export default function ApplicationBuilder() {
         }
     }, [uploadedFiles, status]);
 
-    async function upload(e: React.FormEvent<HTMLFormElement>) {
-        e.preventDefault();
-        const formData = new FormData(e.currentTarget);
-        const repositoryUrl = formData.get("repositoryUrl");
-
-        if (!repositoryUrl) return;
+    async function startDeploy(targetUrl: string) {
+        if (!targetUrl) return;
 
         setIsLoading(true);
         setStatus("initiating");
@@ -54,30 +51,64 @@ export default function ApplicationBuilder() {
         try {
             const response = await fetch("/api/upload", {
                 method: "POST",
-                body: JSON.stringify({ repositoryUrl }),
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ repositoryUrl: targetUrl }),
             });
 
             const responseData = await response.json();
+            if (!response.ok || responseData.error) {
+                throw new Error(responseData.error || "Failed to initiate deployment");
+            }
             const deploymentId = responseData.id;
+
+            // Clean up previous listeners to avoid duplicates
+            socket.off("uploader:upload-progress");
+            socket.off("builder:download");
+            socket.off("builder:build");
+            socket.off("builder:upload-output");
+            socket.off("DONE");
 
             socket.emit("subscribe:upload-progress", deploymentId);
 
             socket.on("uploader:upload-progress", (data) => {
-                setStatus("uploading");
-                setUploadProgress(data.percentage);
-                setUploadedFiles(prev => [...prev, `[uploader] Uploaded: ${data.file}`]);
+                if (data.file && data.file.includes("[ERROR]")) {
+                    setStatus("error");
+                    setIsLoading(false);
+                } else {
+                    setStatus("uploading");
+                    setUploadProgress(data.percentage || 0);
+                }
+                if (data.file) {
+                    setUploadedFiles(prev => [...prev, `[uploader] ${data.file}`]);
+                }
             });
             socket.on("builder:download", (data) => {
-                setStatus("downloading");
-                setUploadedFiles(prev => [...prev, `[builder] Cloned/Downloaded: ${data.file}`]);
+                if (data.file && data.file.includes("[ERROR]")) {
+                    setStatus("error");
+                    setIsLoading(false);
+                } else {
+                    setStatus("downloading");
+                }
+                if (data.file) {
+                    setUploadedFiles(prev => [...prev, `[builder] ${data.file}`]);
+                }
             });
             socket.on("builder:build", (data) => {
-                setStatus("building");
-                setUploadedFiles(prev => [...prev, `[builder] Build Output: ${data.data}`]);
+                if (data.data && data.data.includes("[ERROR]")) {
+                    setStatus("error");
+                    setIsLoading(false);
+                } else {
+                    setStatus("building");
+                }
+                if (data.data) {
+                    setUploadedFiles(prev => [...prev, `[builder] ${data.data}`]);
+                }
             });
             socket.on("builder:upload-output", (data) => {
                 setStatus("publishing");
-                setUploadedFiles(prev => [...prev, `[builder] Published: ${data.file}`]);
+                if (data.file) {
+                    setUploadedFiles(prev => [...prev, `[builder] Published: ${data.file}`]);
+                }
             });
             socket.on("DONE", (data) => {
                 setStatus("complete");
@@ -92,6 +123,11 @@ export default function ApplicationBuilder() {
         }
     }
 
+    async function upload(e: React.FormEvent<HTMLFormElement>) {
+        e.preventDefault();
+        startDeploy(inputRepoUrl.trim());
+    }
+
     return (
         <div className="space-y-6">
             {/* Input Form */}
@@ -99,6 +135,8 @@ export default function ApplicationBuilder() {
                 <div className="flex gap-2">
                     <Input 
                         name="repositoryUrl" 
+                        value={inputRepoUrl}
+                        onChange={(e) => setInputRepoUrl(e.target.value)}
                         placeholder="https://github.com/username/project" 
                         required
                         disabled={isLoading}
@@ -156,30 +194,42 @@ export default function ApplicationBuilder() {
 
             {/* Deployment Result Panel */}
             {publicUrl && (
-                <div className="border border-zinc-800 bg-zinc-950/20 p-5 space-y-4">
-                    <div className="flex items-center gap-2 text-white font-mono text-xs uppercase tracking-wider font-semibold">
-                        <span>✔ Deployment Finished Successfully</span>
+                <div className="border border-emerald-500/30 bg-emerald-950/10 p-5 space-y-4 rounded-none">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 text-emerald-400 font-mono text-xs uppercase tracking-wider font-semibold">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                            <span>✔ Deployment Finished Successfully</span>
+                        </div>
+                        {deployUrl && (
+                            <Link 
+                                href={deployUrl} 
+                                target="_blank" 
+                                className="bg-emerald-500 hover:bg-emerald-400 text-black font-mono font-bold text-xs uppercase px-4 py-2 transition tracking-wider flex items-center gap-1.5"
+                            >
+                                Open Live Site ↗
+                            </Link>
+                        )}
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono pt-2 border-t border-zinc-900">
                         <div className="space-y-1">
-                            <span className="text-zinc-500 block uppercase tracking-widest text-[9px]">Production URL</span>
+                            <span className="text-zinc-500 block uppercase tracking-widest text-[9px]">Live Request-Handler URL</span>
+                            <Link 
+                                href={deployUrl} 
+                                target="_blank" 
+                                className="text-emerald-400 hover:underline transition break-all block font-bold"
+                            >
+                                {deployUrl}
+                            </Link>
+                        </div>
+                        <div className="space-y-1">
+                            <span className="text-zinc-500 block uppercase tracking-widest text-[9px]">Local Dashboard Preview</span>
                             <Link 
                                 href={publicUrl} 
                                 target="_blank" 
                                 className="text-white hover:underline hover:text-zinc-300 transition break-all block"
                             >
                                 {publicUrl}
-                            </Link>
-                        </div>
-                        <div className="space-y-1">
-                            <span className="text-zinc-500 block uppercase tracking-widest text-[9px]">Local Access URL</span>
-                            <Link 
-                                href={deployUrl} 
-                                target="_blank" 
-                                className="text-white hover:underline hover:text-zinc-300 transition break-all block"
-                            >
-                                {deployUrl}
                             </Link>
                         </div>
                     </div>
