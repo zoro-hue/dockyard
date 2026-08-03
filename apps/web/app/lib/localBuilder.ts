@@ -1,6 +1,6 @@
 import { mkdir as mkdirAsync, readdir as readdirAsync, stat as statAsync, copyFile as copyFileAsync } from "fs/promises";
 import { existsSync, readFileSync } from "fs";
-import { exec } from "child_process";
+import { spawn } from "child_process";
 import { join, resolve } from "path";
 import { cwd } from "process";
 import { deploymentEvents } from "./events";
@@ -46,6 +46,43 @@ function hasBuildScript(dir: string): boolean {
     }
 }
 
+function runCommand(command: string, args: string[], cwd: string, projectId: string): Promise<void> {
+    return new Promise((resolve) => {
+        const child = spawn(command, args, {
+            cwd,
+            shell: true,
+            env: { ...process.env, CI: "true", DISABLE_ESLINT_PLUGIN: "true" }
+        });
+
+        child.stdout?.on("data", (data) => {
+            const lines = data.toString().split("\n");
+            for (const line of lines) {
+                if (!line.trim()) continue;
+                deploymentEvents.emitDeploymentEvent({
+                    deploymentId: projectId,
+                    eventName: "builder:build",
+                    data: { data: line }
+                });
+            }
+        });
+
+        child.stderr?.on("data", (data) => {
+            const lines = data.toString().split("\n");
+            for (const line of lines) {
+                if (!line.trim()) continue;
+                deploymentEvents.emitDeploymentEvent({
+                    deploymentId: projectId,
+                    eventName: "builder:build",
+                    data: { data: line }
+                });
+            }
+        });
+
+        child.on("close", () => resolve());
+        child.on("error", () => resolve());
+    });
+}
+
 export async function processLocalBuild(projectId: string) {
     const projectPath = join(cwd(), "outputs", projectId);
     const buildPath = join(cwd(), "builds", projectId);
@@ -84,30 +121,18 @@ export async function processLocalBuild(projectId: string) {
             deploymentEvents.emitDeploymentEvent({
                 deploymentId: projectId,
                 eventName: "builder:build",
-                data: { data: `[Builder] Installing dependencies & building project at ${workingDir}...` }
+                data: { data: `[Builder] Installing dependencies (npm install --legacy-peer-deps --no-audit --no-fund)...` }
             });
 
-            await new Promise<void>((resolve) => {
-                const child = exec("npm install --legacy-peer-deps && npm run build", { cwd: workingDir } as any);
+            await runCommand("npm", ["install", "--legacy-peer-deps", "--no-audit", "--no-fund"], workingDir, projectId);
 
-                child.stdout?.on("data", (data) => {
-                    deploymentEvents.emitDeploymentEvent({
-                        deploymentId: projectId,
-                        eventName: "builder:build",
-                        data: { data: data.toString() }
-                    });
-                });
-
-                child.stderr?.on("data", (data) => {
-                    deploymentEvents.emitDeploymentEvent({
-                        deploymentId: projectId,
-                        eventName: "builder:build",
-                        data: { data: data.toString() }
-                    });
-                });
-
-                child.on("close", () => resolve());
+            deploymentEvents.emitDeploymentEvent({
+                deploymentId: projectId,
+                eventName: "builder:build",
+                data: { data: `[Builder] Compiling production build (npm run build)...` }
             });
+
+            await runCommand("npm", ["run", "build"], workingDir, projectId);
 
             let outFolder = "";
             if (existsSync(join(workingDir, "dist"))) outFolder = "dist";
