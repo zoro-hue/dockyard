@@ -1,5 +1,5 @@
 import { mkdir as mkdirAsync, readdir as readdirAsync, stat as statAsync, copyFile as copyFileAsync } from "fs/promises";
-import { existsSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { exec } from "child_process";
 import { join, resolve } from "path";
 import { cwd } from "process";
@@ -35,6 +35,17 @@ async function copyDir(src: string, dest: string) {
     }
 }
 
+function hasBuildScript(dir: string): boolean {
+    const pkgPath = join(dir, "package.json");
+    if (!existsSync(pkgPath)) return false;
+    try {
+        const content = JSON.parse(readFileSync(pkgPath, "utf-8"));
+        return !!(content.scripts && content.scripts.build);
+    } catch {
+        return false;
+    }
+}
+
 export async function processLocalBuild(projectId: string) {
     const projectPath = join(cwd(), "outputs", projectId);
     const buildPath = join(cwd(), "builds", projectId);
@@ -50,17 +61,17 @@ export async function processLocalBuild(projectId: string) {
         await mkdirAsync(buildPath, { recursive: true });
         await mkdirAsync(s3BuildPath, { recursive: true });
 
-        // Find working directory with package.json (root or subfolder)
+        // Find working directory with package.json that contains a build script
         let workingDir = projectPath;
-        if (!existsSync(join(projectPath, "package.json"))) {
+        if (!hasBuildScript(projectPath)) {
             try {
                 const subdirs = await readdirAsync(projectPath);
                 for (const sub of subdirs) {
                     const subPath = join(projectPath, sub);
                     const subStats = await statAsync(subPath);
-                    if (subStats.isDirectory() && existsSync(join(subPath, "package.json"))) {
+                    if (subStats.isDirectory() && hasBuildScript(subPath)) {
                         workingDir = subPath;
-                        console.log(`[LocalBuilder] Found package.json in subfolder: ${sub}`);
+                        console.log(`[LocalBuilder] Found package.json with build script in subfolder: ${sub}`);
                         break;
                     }
                 }
@@ -69,7 +80,7 @@ export async function processLocalBuild(projectId: string) {
 
         const packageJsonPath = join(workingDir, "package.json");
 
-        if (existsSync(packageJsonPath)) {
+        if (existsSync(packageJsonPath) && hasBuildScript(workingDir)) {
             deploymentEvents.emitDeploymentEvent({
                 deploymentId: projectId,
                 eventName: "builder:build",
@@ -117,7 +128,7 @@ export async function processLocalBuild(projectId: string) {
             deploymentEvents.emitDeploymentEvent({
                 deploymentId: projectId,
                 eventName: "builder:build",
-                data: { data: "[Builder] No package.json found. Serving as static HTML site." }
+                data: { data: "[Builder] No build script found. Serving static HTML & project files directly." }
             });
 
             deploymentEvents.emitDeploymentEvent({
