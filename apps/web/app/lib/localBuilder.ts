@@ -1,6 +1,6 @@
 import { mkdir as mkdirAsync, readdir as readdirAsync, stat as statAsync, copyFile as copyFileAsync } from "fs/promises";
 import { existsSync, readFileSync } from "fs";
-import { spawn } from "child_process";
+import { exec } from "child_process";
 import { join, resolve } from "path";
 import { cwd } from "process";
 import { deploymentEvents } from "./events";
@@ -46,11 +46,11 @@ function hasBuildScript(dir: string): boolean {
     }
 }
 
-function runCommand(command: string, args: string[], cwd: string, projectId: string): Promise<void> {
+function runCommand(cmd: string, cwd: string, projectId: string): Promise<void> {
     return new Promise((resolve) => {
-        const child = spawn(command, args, {
+        const child = exec(cmd, {
             cwd,
-            shell: true,
+            maxBuffer: 50 * 1024 * 1024,
             env: { ...process.env, CI: "true", DISABLE_ESLINT_PLUGIN: "true" }
         });
 
@@ -79,7 +79,10 @@ function runCommand(command: string, args: string[], cwd: string, projectId: str
         });
 
         child.on("close", () => resolve());
-        child.on("error", () => resolve());
+        child.on("error", (err) => {
+            console.error(`[runCommand error] ${cmd}:`, err);
+            resolve();
+        });
     });
 }
 
@@ -124,7 +127,7 @@ export async function processLocalBuild(projectId: string) {
                 data: { data: `[Builder] Installing dependencies (npm install --legacy-peer-deps --no-audit --no-fund)...` }
             });
 
-            await runCommand("npm", ["install", "--legacy-peer-deps", "--no-audit", "--no-fund"], workingDir, projectId);
+            await runCommand("npm install --legacy-peer-deps --no-audit --no-fund", workingDir, projectId);
 
             deploymentEvents.emitDeploymentEvent({
                 deploymentId: projectId,
@@ -132,7 +135,7 @@ export async function processLocalBuild(projectId: string) {
                 data: { data: `[Builder] Compiling production build (npm run build)...` }
             });
 
-            await runCommand("npm", ["run", "build"], workingDir, projectId);
+            await runCommand("npm run build", workingDir, projectId);
 
             let outFolder = "";
             if (existsSync(join(workingDir, "dist"))) outFolder = "dist";
