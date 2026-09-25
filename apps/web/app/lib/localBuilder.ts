@@ -46,12 +46,18 @@ function hasBuildScript(dir: string): boolean {
     }
 }
 
-function runCommand(cmd: string, cwd: string, projectId: string): Promise<void> {
+function runCommand(cmd: string, cwd: string, projectId: string, timeoutMs: number = 360000): Promise<boolean> {
     return new Promise((resolve) => {
         const child = exec(cmd, {
             cwd,
             maxBuffer: 50 * 1024 * 1024,
-            env: { ...process.env, CI: "true", DISABLE_ESLINT_PLUGIN: "true" }
+            timeout: timeoutMs,
+            env: {
+                ...process.env,
+                CI: "false",
+                DISABLE_ESLINT_PLUGIN: "true",
+                NODE_OPTIONS: "--max-old-space-size=384"
+            }
         });
 
         child.stdout?.on("data", (data) => {
@@ -78,10 +84,27 @@ function runCommand(cmd: string, cwd: string, projectId: string): Promise<void> 
             }
         });
 
-        child.on("close", () => resolve());
+        child.on("close", (code) => {
+            if (code !== 0) {
+                deploymentEvents.emitDeploymentEvent({
+                    deploymentId: projectId,
+                    eventName: "builder:build",
+                    data: { data: `[ERROR] Command exited with code ${code}` }
+                });
+                resolve(false);
+            } else {
+                resolve(true);
+            }
+        });
+
         child.on("error", (err) => {
             console.error(`[runCommand error] ${cmd}:`, err);
-            resolve();
+            deploymentEvents.emitDeploymentEvent({
+                deploymentId: projectId,
+                eventName: "builder:build",
+                data: { data: `[ERROR] Command execution error: ${err.message}` }
+            });
+            resolve(false);
         });
     });
 }
@@ -124,10 +147,13 @@ export async function processLocalBuild(projectId: string) {
             deploymentEvents.emitDeploymentEvent({
                 deploymentId: projectId,
                 eventName: "builder:build",
-                data: { data: `[Builder] Installing dependencies (npm install --legacy-peer-deps --no-audit --no-fund)...` }
+                data: { data: `[Builder] Installing dependencies (npm install --legacy-peer-deps --no-audit --no-fund --loglevel=info)...` }
             });
 
-            await runCommand("npm install --legacy-peer-deps --no-audit --no-fund", workingDir, projectId);
+            const installOk = await runCommand("npm install --legacy-peer-deps --no-audit --no-fund --loglevel=info", workingDir, projectId);
+            if (!installOk) {
+                throw new Error("Dependency installation failed or timed out.");
+            }
 
             deploymentEvents.emitDeploymentEvent({
                 deploymentId: projectId,
@@ -135,7 +161,10 @@ export async function processLocalBuild(projectId: string) {
                 data: { data: `[Builder] Compiling production build (npm run build)...` }
             });
 
-            await runCommand("npm run build", workingDir, projectId);
+            const buildOk = await runCommand("npm run build", workingDir, projectId);
+            if (!buildOk) {
+                throw new Error("Production build step failed.");
+            }
 
             let outFolder = "";
             if (existsSync(join(workingDir, "dist"))) outFolder = "dist";
