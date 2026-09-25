@@ -1,5 +1,5 @@
 import { mkdir as mkdirAsync, readdir as readdirAsync, stat as statAsync, copyFile as copyFileAsync } from "fs/promises";
-import { existsSync, readFileSync } from "fs";
+import { existsSync, readFileSync, readdirSync } from "fs";
 import { exec } from "child_process";
 import { join, resolve } from "path";
 import { cwd } from "process";
@@ -33,6 +33,20 @@ async function copyDir(src: string, dest: string) {
             await copyFileAsync(srcItem, destItem);
         }
     }
+}
+
+function hasAnyHtmlFile(dir: string, depth = 0): boolean {
+    if (depth > 3 || !existsSync(dir)) return false;
+    try {
+        const items = readdirSync(dir, { withFileTypes: true });
+        for (const item of items) {
+            if (item.isFile() && item.name.toLowerCase().endsWith(".html")) return true;
+            if (item.isDirectory() && item.name !== "node_modules" && item.name !== ".git") {
+                if (hasAnyHtmlFile(join(dir, item.name), depth + 1)) return true;
+            }
+        }
+    } catch {}
+    return false;
 }
 
 function hasBuildScript(dir: string): boolean {
@@ -182,6 +196,12 @@ export async function processLocalBuild(projectId: string) {
             await copyDir(sourceDir, buildPath);
             await copyDir(sourceDir, s3BuildPath);
         } else {
+            // Check if there is any HTML entry point in the repository
+            const hasHtml = hasAnyHtmlFile(projectPath);
+            if (!hasHtml) {
+                throw new Error("No frontend entry point found. Repository contains neither a package.json build script nor an HTML file (index.html). Dockyard only deploys frontend web applications.");
+            }
+
             deploymentEvents.emitDeploymentEvent({
                 deploymentId: projectId,
                 eventName: "builder:build",

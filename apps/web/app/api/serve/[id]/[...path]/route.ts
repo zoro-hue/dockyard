@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { readFile } from "fs/promises";
-import { existsSync } from "fs";
+import { existsSync, readdirSync } from "fs";
 import { join, extname } from "path";
 import { cwd } from "process";
 
@@ -69,13 +69,51 @@ function findAssetPath(id: string, relativeFilePath: string): string | null {
     return null;
 }
 
+function searchHtmlRecursive(dir: string, depth = 0): string | null {
+    if (depth > 3 || !existsSync(dir)) return null;
+    try {
+        const items = readdirSync(dir, { withFileTypes: true });
+
+        // 1. Direct index.html or index.htm
+        for (const item of items) {
+            if (item.isFile() && (item.name.toLowerCase() === "index.html" || item.name.toLowerCase() === "index.htm")) {
+                return join(dir, item.name);
+            }
+        }
+
+        // 2. Check prioritized subdirectories: dist, build, out, public, web, client, src
+        const priorityDirs = ["dist", "build", "out", "public", "web", "client", "src"];
+        for (const pDir of priorityDirs) {
+            const sub = join(dir, pDir);
+            if (existsSync(sub)) {
+                const found = searchHtmlRecursive(sub, depth + 1);
+                if (found) return found;
+            }
+        }
+
+        // 3. Check any other subdirectories
+        for (const item of items) {
+            if (item.isDirectory() && !priorityDirs.includes(item.name) && item.name !== "node_modules" && item.name !== ".git") {
+                const found = searchHtmlRecursive(join(dir, item.name), depth + 1);
+                if (found) return found;
+            }
+        }
+
+        // 4. Fallback to any .html file in current directory
+        for (const item of items) {
+            if (item.isFile() && item.name.toLowerCase().endsWith(".html")) {
+                return join(dir, item.name);
+            }
+        }
+    } catch {}
+    return null;
+}
+
 function findIndexPath(id: string): string | null {
     for (const baseDir of getCandidateBuildPaths(id)) {
         if (!existsSync(baseDir)) continue;
-        if (existsSync(join(baseDir, "index.html"))) return join(baseDir, "index.html");
-        if (existsSync(join(baseDir, "dist", "index.html"))) return join(baseDir, "dist", "index.html");
-        if (existsSync(join(baseDir, "build", "index.html"))) return join(baseDir, "build", "index.html");
-        if (existsSync(join(baseDir, "out", "index.html"))) return join(baseDir, "out", "index.html");
+        const found = searchHtmlRecursive(baseDir);
+        if (found) return found;
     }
     return null;
 }
