@@ -27,11 +27,15 @@ export async function cloneAndUploadRepository(id: string, repositoryUrl: string
 
         deploymentEvents.emitDeploymentEvent({ deploymentId: id, eventName: 'uploader:upload-progress', data: payload });
 
-        if (!publisher.isOpen) {
-            await publisher.connect();
+        try {
+            if (!publisher.isOpen) {
+                await publisher.connect();
+            }
+            await publisher.publish(`deployment:${id}:uploader:upload-progress`, JSON.stringify(payload));
+            await publisher.lPush("build-queue", JSON.stringify({ id, repositoryUrl }));
+        } catch (redisErr: any) {
+            console.warn(`[Upload Redis Warning] ${id}:`, redisErr.message);
         }
-        await publisher.publish(`deployment:${id}:uploader:upload-progress`, JSON.stringify(payload));
-        await publisher.lPush("build-queue", JSON.stringify({ id, repositoryUrl }));
 
         // Instantly trigger building pipeline
         processLocalBuild(id);
